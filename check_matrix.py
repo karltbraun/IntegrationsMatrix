@@ -2,18 +2,46 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from typing import List, Tuple, Dict
 import os
+import datetime
 
-""" check_matrix - Compare values in a matrix with their transposed positions.`
-"""
+# ################### setup ###################
+
+# TEST = True  # Set to True to test with a small test file
+TEST = False  # Set to False to test with the full file
+
+if TEST:
+    FILENAME_IN: str = "/Users/karlbraun/Documents/DEV-L/KTB/Misc/test_file.xlsx"
+    TABLE_NAME: str = "A1:F6"
+else:
+    FILENAME_IN: str = (
+        "/Users/karlbraun/Documents/DEV-L/KTB/Misc/MDR_Vendor_Comparisons.xlsx"
+    )
+    TABLE_NAME: str = "B2:AL35"
+
+PRINT_INPUT_MATRIX = False
+
+# ################### Vendor class ###################
 
 
-FILENAME_IN: str = (
-    "/Users/karlbraun/Documents/DEV-L/KTB/Misc/MDR_Vendor_Comparisons.xlsx"
-)
-# FILENAME_IN: str = "/Users/karlbraun/Documents/DEV-L/KTB/Misc/test_file.xlsx"
+class Vendor:
+    def __init__(self, name):
+        self.name = name
+        self.integrations = set()
+        self.limited = set()
 
-TABLE_NAME: str = "B2:AL35"
-# TABLE_NAME: str = "A1:F6"
+    def add_integration(self, integration):
+        self.integrations.add(integration)
+
+    def add_limited(self, integration):
+        self.limited.add(integration)
+
+    @property
+    def integrations_count(self):
+        return len(self.integrations)
+
+    @property
+    def limited_count(self):
+        return len(self.limited)
 
 
 # ################### Excel Table to Matrix ###################
@@ -30,362 +58,53 @@ def excel_table_to_matrix(table: Worksheet) -> List[List[str]]:
     return matrix
 
 
-# ################### Transform Data ###################
+# ################### process_matrix ###################
 
 
-def transform_data(
-    data: List[List[str]],
-) -> Tuple[Dict[str, Dict[str, str]], Dict[str, Dict[str, str]]]:
+def process_matrix(matrix: List[List[str]]) -> Dict[str, Vendor]:
+    """process_matrix - Process the matrix and return a dictionary of Vendor objects."""
 
-    row_dict = {}
-    col_dict = {}
+    row_headers = [row[0] for row in matrix[1:]]
+    col_headers = matrix[0][1:]
+    all_headers = sorted(set(row_headers + col_headers))
 
-    row_headers = data[0][1:]
-    col_headers = [row[0] for row in data[1:]]
+    vendors = {header: Vendor(header) for header in all_headers}
 
-    for i, row in enumerate(data[1:], start=1):
-        row_header = row[0]
-        row_dict[row_header] = {
-            col_header: row[j] for j, col_header in enumerate(row_headers, start=1)
-        }
+    def check_integration(vendor1, vendor2):
+        if vendor1 in row_headers and vendor2 in col_headers:
+            i = row_headers.index(vendor1) + 1
+            j = col_headers.index(vendor2) + 1
+            value = matrix[i][j]
 
-    for j, col_header in enumerate(row_headers, start=1):
-        col_dict[col_header] = {row[0]: row[j] for row in data[1:]}
+            if value == "YES":
+                vendors[vendor1].add_integration(vendor2)
+                vendors[vendor2].add_integration(vendor1)
+                return True
+            elif value == "LIMITED":
+                vendors[vendor1].add_limited(vendor2)
+                vendors[vendor2].add_limited(vendor1)
+                return True
+        return False
 
-    return row_dict, col_dict
+    for vendor1, vendor2 in (
+        (v1, v2) for v1 in all_headers for v2 in all_headers if v1 != v2
+    ):
+        check_integration(vendor1, vendor2) or check_integration(vendor2, vendor1)
 
+    for vendor in vendors.values():
+        vendor.integrations = sorted(vendor.integrations)
+        vendor.limited = sorted(vendor.limited)
 
-# ################### Check for None ###################
-
-
-def check_for_none(value: str) -> str:
-    if value is None:
-        return "<None>"
-    else:
-        return value
-
-
-# ################### Compare Values 2 ###################
-
-
-def compare_values2(
-    row_dict: Dict[str, Dict[str, str]],
-    col_dict: Dict[str, Dict[str, str]],
-) -> dict:
-    """
-    Compare the values of each (row, column) combination with the corresponding
-    transposed (column, row) combination.
-    Return a list of tuples containing the comparison results.
-    """
-
-    ROW_COL_KEY = "val_row_col"
-    COL_ROW_KEY = "val_col_row"
-    MATCH_KEY = "match"
-
-    results = {}
-    cell_results = {}
-    row_hdrs = list(row_dict.keys())
-    col_hdrs = list(col_dict.keys())
-    all_hdrs = sorted(set(row_hdrs + col_hdrs))
-
-    print("=============================== Comparing ===============================")
-    print(f"Adding to results: {cell_results}")
-
-    print(
-        f"{'Vendor 1':<15} {'Vendor 2':<15} {'row,col':<15} {'col,row':<15} {'Match':<5} {'Value':<5}"
-    )
-
-    for row_hdr in all_hdrs:
-
-        for col_hdr in all_hdrs:
-            # initialize results dictionary
-
-            for col_hdr in all_hdrs:
-                cell_results[row_hdr] = {}
-
-                if row_hdr == col_hdr:
-                    # skip the diagonal
-                    continue
-
-                if (  # ----------------- 0, 0, 0, 0 ----------------
-                    (row_hdr not in row_hdrs)
-                    and (col_hdr not in col_hdrs)
-                    and (col_hdr not in row_hdrs)
-                    and (row_hdr not in col_hdrs)
-                ):
-                    # we shouldn't get here
-                    raise ValueError("Invalid header combination")
-
-                #####
-
-                cell_results[row_hdr]["ROW"] = row_hdr
-                cell_results[row_hdr]["COL"] = col_hdr
-                cell_results[row_hdr]["VALUE"] = ""
-
-                if (  # ----------------- 0, 0, 0, 1 ----------------
-                    (row_hdr not in row_hdrs)
-                    and (col_hdr not in col_hdrs)
-                    and (col_hdr not in row_hdrs)
-                    and (row_hdr in col_hdrs)
-                ):
-                    # row,col value is valid because no valid row header
-                    # col,row value is not valid because no valid transposed row header
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {row_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = False  # False because we want to manually check
-
-                elif (  # ----------------- 0, 0, 1, 0 ----------------
-                    (row_hdr not in row_hdrs)
-                    and (col_hdr not in col_hdrs)
-                    and (col_hdr in row_hdrs)
-                    and (row_hdr not in col_hdrs)
-                ):
-                    # row,col value is not valid because no valid column header
-                    # col,row value is valid because there is a row with the col_hdr value
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {row_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = value = check_for_none(
-                        col_dict[col_hdr][row_hdr]
-                    )
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = True  # we just use the one good value we have
-                    cell_results[row_hdr]["VALUE"] = value
-
-                elif (  # ----------------- 0, 0, 1, 1 ----------------
-                    (row_hdr not in row_hdrs)
-                    and (col_hdr not in col_hdrs)
-                    and (col_hdr in row_hdrs)
-                    and (row_hdr in col_hdrs)
-                ):
-                    # normal row,col value not valid because no valid column header in the normal position
-                    # yes, no valid column header either, but we 'fail' on the first item
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {row_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = value = check_for_none(
-                        col_dict[row_hdr][col_hdr]
-                    )
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = True  # we just use the one good value we have
-                    cell_results[row_hdr]["VALUE"] = value
-
-                elif (  # ----------------- 0, 1, 0, 0 ----------------
-                    (row_hdr not in row_hdrs)
-                    and (col_hdr in col_hdrs)
-                    and (col_hdr not in row_hdrs)
-                    and (row_hdr not in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {row_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = False  # False because we want to manually check
-
-                elif (  # ----------------- 0, 1, 0, 1 ----------------
-                    (row_hdr not in row_hdrs)
-                    and (col_hdr in col_hdrs)
-                    and (col_hdr not in row_hdrs)
-                    and (row_hdr in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {row_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = False  # False because we want to manually check
-
-                elif (  # ----------------- 0, 1, 1, 0 ----------------
-                    (row_hdr not in row_hdrs)
-                    and (col_hdr in col_hdrs)
-                    and (col_hdr in row_hdrs)
-                    and (row_hdr not in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {row_hdr}"
-                    cell_results[col_hdr][COL_ROW_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = False  # False because we want to manually check
-
-                elif (  # ----------------- 0, 1, 1, 1 ----------------
-                    (row_hdr not in row_hdrs)
-                    and (col_hdr in col_hdrs)
-                    and (col_hdr in row_hdrs)
-                    and (row_hdr in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {row_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = value = check_for_none(
-                        col_dict[row_hdr][col_hdr]
-                    )
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = True  # we just use the one good value we have
-                    cell_results[row_hdr]["VALUE"] = value
-
-                elif (  # ----------------- 1, 0, 0, 0 ----------------
-                    (row_hdr in row_hdrs)
-                    and (col_hdr not in col_hdrs)
-                    and (col_hdr not in row_hdrs)
-                    and (row_hdr not in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = False  # False because we want to manually check
-
-                elif (  # ----------------- 1, 0, 0, 1 ----------------
-                    (row_hdr in row_hdrs)
-                    and (col_hdr not in col_hdrs)
-                    and (col_hdr not in row_hdrs)
-                    and (row_hdr in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = False  # False because we want to manually check
-
-                elif (  # ----------------- 1, 0, 1, 0 ----------------
-                    (row_hdr in row_hdrs)
-                    and (col_hdr not in col_hdrs)
-                    and (col_hdr in row_hdrs)
-                    and (row_hdr not in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {row_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = False  # False because we want to manually check
-
-                elif (  # ----------------- 1, 0, 1, 1 ---------------
-                    (row_hdr in row_hdrs)
-                    and (col_hdr not in col_hdrs)
-                    and (col_hdr in row_hdrs)
-                    and (row_hdr in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][COL_ROW_KEY] = value = check_for_none(
-                        col_dict[row_hdr][col_hdr]
-                    )
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = True  # we just use the one good value we have
-                    cell_results[row_hdr]["VALUE"] = value
-
-                elif (  # ----------------- 1, 1, 0, 0 ----------------
-                    (row_hdr in row_hdrs)
-                    and (col_hdr in col_hdrs)
-                    and (col_hdr not in row_hdrs)
-                    and (row_hdr not in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = value = check_for_none(
-                        row_dict[row_hdr][col_hdr]
-                    )
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = True  # we just use the one good value we have
-                    cell_results[row_hdr]["VALUE"] = value
-
-                elif (  # ----------------- 1, 1, 0, 1 ----------------
-                    (row_hdr in row_hdrs)
-                    and (col_hdr in col_hdrs)
-                    and (col_hdr not in row_hdrs)
-                    and (row_hdr in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = value = check_for_none(
-                        row_dict[row_hdr][col_hdr]
-                    )
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {col_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = True  # we just use the one good value we have
-                    cell_results[row_hdr]["VALUE"] = value
-
-                elif (  # ----------------- 1, 1, 1, 0 ----------------
-                    (row_hdr in row_hdrs)
-                    and (col_hdr in col_hdrs)
-                    and (col_hdr in row_hdrs)
-                    and (row_hdr not in col_hdrs)
-                ):
-                    cell_results[row_hdr][ROW_COL_KEY] = value = check_for_none(
-                        row_dict[row_hdr][col_hdr]
-                    )
-                    cell_results[row_hdr][COL_ROW_KEY] = f"X {row_hdr}"
-                    cell_results[row_hdr][
-                        MATCH_KEY
-                    ] = True  # we just use the one good value we have
-                    cell_results[row_hdr]["VALUE"] = value
-
-                elif (  # ---------------- 1, 1, 1, 1 ---------------
-                    (row_hdr in row_hdrs)
-                    and (col_hdr in col_hdrs)
-                    and (col_hdr in row_hdrs)
-                    and (row_hdr in col_hdrs)
-                ):
-                    # both headers are valid in the default iand transpositional positions
-                    cell_results[row_hdr][ROW_COL_KEY] = check_for_none(
-                        row_dict[row_hdr][col_hdr]
-                    )
-                    cell_results[row_hdr][COL_ROW_KEY] = check_for_none(
-                        col_dict[row_hdr][col_hdr]
-                    )
-                    cell_results[row_hdr][MATCH_KEY] = (
-                        cell_results[row_hdr][ROW_COL_KEY]
-                        == cell_results[row_hdr][COL_ROW_KEY]
-                    )
-                    if cell_results[row_hdr][MATCH_KEY] == True:
-                        cell_results[row_hdr]["VALUE"] = cell_results[row_hdr][
-                            ROW_COL_KEY
-                        ]
-
-                # at this point, one or both of the headers is not valid in either the default or
-                #   transpositional positions
-
-                # print(f"{'Vendor 1':<15} {'Vendor 2':<15} {'row,col'}:<15 {'col,row'}:<15 {'Match':<5} {'Value':<5}")
-                try:
-                    print(
-                        f"{row_hdr[0:15]:<15} {col_hdr[0:15]:<15} {cell_results[row_hdr][ROW_COL_KEY][0:15]:<15} {cell_results[row_hdr][COL_ROW_KEY][0:15]:<15} {cell_results[row_hdr][MATCH_KEY]:<5} {cell_results[row_hdr]['VALUE']:<5}"
-                    )
-                except TypeError:
-                    print()
-                    print("Type Error:")
-                    print(
-                        f"row_hdr: {row_hdr} col_hdr: {col_hdr} cell_results: {cell_results}"
-                    )
-                    print()
-
-                results[row_hdr] = cell_results
-
-    print("=============================== Done ===============================")
-    return results
-
-
-# ################### Print Report ###################
-
-
-def print_report(
-    results: List[Tuple[Tuple[str, str], Tuple[str, str], str, str, str]]
-) -> None:
-    """
-    Print the comparison results in a formatted report.
-    """
-    return
-
-    for result in results:
-        print(f"Comparison: {result[0]} vs {result[1]}")
-        print(
-            f"Is Equal: {result[2]:<20}Value: {result[3]:<20}Transposed Value: {result[4]}"
-        )
-        print()
+    return vendors
 
 
 # ################### Load Matrix ###################
 
 
 def load_matrix(filename: str, table_name: str) -> List[List[str]]:
+    """load_matrix - Load a matrix from an Excel file."""
 
-    matrix: List[List[str]] = []
+    matrix: List[List[str]] = None
 
     if not os.path.exists(filename):
         print(f"File '{filename}' does not exist.")
@@ -400,17 +119,19 @@ def load_matrix(filename: str, table_name: str) -> List[List[str]]:
     return matrix
 
 
-# ################## print dictionary ##################
+# ################### get_matrix_input  ###################
 
 
-def print_dict(dictionary: Dict[str, Dict[str, str]], title: str) -> None:
-    print(f"########## {title} ##########")
-    for key, value in dictionary.items():
-        print(f"{key}:")
-        for k, v in value.items():
-            print(f"  {k}: {v}")
-        print()
-    print()
+def get_matrix_input() -> List[List[str]]:
+    """get_matrix_input - dummy routine to mock up getting input from
+    hard coded file names and table range.  Ideally this would be
+    something more dynamic, getting in put file from command line
+    or through dialoge witht the user.
+    """
+    filename = FILENAME_IN  # defined at the top of the file
+    table_name = TABLE_NAME  # defined at the top of the file
+    matrix = load_matrix(filename, table_name)
+    return matrix
 
 
 # ################### MAIN ###################
@@ -418,28 +139,25 @@ def print_dict(dictionary: Dict[str, Dict[str, str]], title: str) -> None:
 
 def main():
     # read in the workbook and get the first worksheet
-    if (input_data := load_matrix(FILENAME_IN, TABLE_NAME)) is None:
+    if (input_data := get_matrix_input()) is None:
         return 1
 
-    # Transform data into dictionaries
-    row_dict, col_dict = transform_data(input_data)
+    if PRINT_INPUT_MATRIX:
+        print("Input matrix:")
+        for row in input_data:
+            print(row)
+        print()
 
-    # Print the two dictionaries
-    print_dict(row_dict, "Row Dictionary")
-    print_dict(col_dict, "Column Dictionary")
+    vendors = process_matrix(input_data)
 
-    # Compare values and generate results
-    comparison_results = compare_values2(row_dict, col_dict)
-    print("##################### Comparison Results #####################")
-    print(f"Items successfully compared: {len(comparison_results)}")
-    for item in comparison_results:
-        print(item)
-    print()
-
-    # Print the report
-    print_report(comparison_results)
-
-    return 0
+    current_time = datetime.datetime.now()
+    print(f"----------------------- {current_time} -----------------------")
+    print("\nIntegration Results:")
+    for vendor in vendors.values():
+        print(f"Vendor: {vendor.name}")
+        print(f"  Integrations: {vendor.integrations_count}\n  {vendor.integrations}")
+        print(f"  Limited: {vendor.limited_count}\n  {vendor.limited}")
+        print()
 
 
 if __name__ == "__main__":
