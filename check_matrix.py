@@ -1,3 +1,9 @@
+""" check_matrix.py - Read in an Excel file with a matrix of integrations and
+    limited integrations between vendors and output the results.
+
+    Current version has hard coded file names in setup section
+"""
+
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from typing import List, Tuple, Dict
@@ -21,6 +27,11 @@ else:
 PRINT_INPUT_MATRIX = False
 
 # ################### Vendor class ###################
+
+
+""" Vendor class - Class to hold information about a vendor and their integrations.
+    We use this to list the other vendors with which a vendor has integrations 
+"""
 
 
 class Vendor:
@@ -47,7 +58,20 @@ class Vendor:
 # ################### Excel Table to Matrix ###################
 
 
+from typing import List
+from openpyxl.worksheet.worksheet import Worksheet
+
+
 def excel_table_to_matrix(table: Worksheet) -> List[List[str]]:
+    """
+    Converts an Excel table into a matrix.
+
+    Args:
+        table (Worksheet): The Excel table to convert.
+
+    Returns:
+        List[List[str]]: The matrix representation of the Excel table.
+    """
     matrix = []
     for row in table:
         row_values = [
