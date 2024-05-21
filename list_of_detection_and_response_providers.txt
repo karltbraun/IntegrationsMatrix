@@ -1,0 +1,26 @@
+xxDR Providers:
+Arctic Wolf
+Cisco XDR
+CrowdStrike
+Cylance (Blackberry Protect)
+Cynet
+ESET
+Huntress
+Kroll
+Mandiant
+Microsoft Defender
+Rapid7
+Red Canary
+Secureworks
+SentinelOne
+Sophos
+
+
+Others:
+Datto
+Duo
+KnowBe4 
+Liongard 
+
+The results do not mention Arctic Wolf, Auvik, Netsurion, Pondurance, Recorded Future, ServiceNow or 
+ThreatLocker in the context of detection and response.
