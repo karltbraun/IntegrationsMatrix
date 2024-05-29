@@ -4,13 +4,18 @@
     Current version has hard coded file names in setup section
 """
 
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from typing import List, Tuple, Dict
 import os
 import datetime
 
 # ################### setup ###################
+
+# PRINT_SIMPLE = True  # Set to True to print a simple text output
+PRINT_SIMPLE = False  # Set to False to create an Excel file with the results
+
+FILENAME_OUT = "./Data/Security and IT Service Provider Integrations 20240411.xlsx"
 
 # TEST = True  # Set to True to test with a small test file
 TEST = False  # Set to False to test with the full file
@@ -158,6 +163,69 @@ def get_matrix_input() -> List[List[str]]:
     return matrix
 
 
+# ################### Create XLSX  ###################
+
+
+def create_xlsx(vendors: Dict[str, Vendor]) -> None:
+    filename = FILENAME_OUT  # defined at the top of the file
+
+    if os.path.exists(filename):
+        os.remove(filename)
+
+    wb = Workbook()
+    wb.save(filename)
+
+    ws = wb.active
+    ws["A1"] = "Date Created"
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    ws["B1"] = current_date
+
+    ws["A2"] = "Vendor"
+    ws["B2"] = "Integrations"
+    ws["C2"] = "Limited"
+
+    row = 3
+    for vendor_name, vendor_data in vendors.items():
+        max_len = max(len(vendor_data.integrations), len(vendor_data.limited))
+        for i in range(max_len):
+            ws.cell(row=row, column=1, value=vendor_name)
+            ws.cell(
+                row=row,
+                column=2,
+                value=(
+                    vendor_data.integrations[i]
+                    if i < len(vendor_data.integrations)
+                    else ""
+                ),
+            )
+            ws.cell(
+                row=row,
+                column=3,
+                value=vendor_data.limited[i] if i < len(vendor_data.limited) else "",
+            )
+            row += 1
+
+    wb.save(filename)
+
+
+# ################### Print Simple  ###################
+
+
+def print_simple(vendors: Dict[str, Vendor]) -> None:
+    """print a simple text output listing each vendor, the list of vendors
+    they have integrations with and the list of vendors they have limited
+    integrations with.
+    """
+    current_time = datetime.datetime.now()
+    print(f"----------------------- {current_time} -----------------------")
+    print("\nIntegration Results:")
+    for vendor in vendors.values():
+        print(f"Vendor: {vendor.name}")
+        print(f"  Integrations: {vendor.integrations_count}\n  {vendor.integrations}")
+        print(f"  Limited: {vendor.limited_count}\n  {vendor.limited}")
+        print()
+
+
 # ################### MAIN ###################
 
 
@@ -174,14 +242,10 @@ def main():
 
     vendors = process_matrix(input_data)
 
-    current_time = datetime.datetime.now()
-    print(f"----------------------- {current_time} -----------------------")
-    print("\nIntegration Results:")
-    for vendor in vendors.values():
-        print(f"Vendor: {vendor.name}")
-        print(f"  Integrations: {vendor.integrations_count}\n  {vendor.integrations}")
-        print(f"  Limited: {vendor.limited_count}\n  {vendor.limited}")
-        print()
+    if PRINT_SIMPLE:
+        print_simple(vendors)
+    else:
+        create_xlsx(vendors)
 
 
 if __name__ == "__main__":
